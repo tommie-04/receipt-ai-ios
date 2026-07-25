@@ -1,16 +1,9 @@
 import SwiftUI
-import PhotosUI
 
 struct ContentView: View {
-    @State private var selectedItem: PhotosPickerItem?
-    @State private var selectedImageData: Data?
-
-    @State private var showingActionSheet = false
-    @State private var showingCamera = false
-    @State private var showingPhotoPicker = false
-
-    // Tracks which tab is currently selected
     @State private var selectedTab: Tab = .home
+    @State private var showingAddTransaction = false
+    @State private var transactions: [Transaction] = []
 
     enum Tab {
         case home, stats, profile, settings
@@ -18,33 +11,33 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-
-            // Show a different page depending on which tab is selected
             Group {
                 switch selectedTab {
                 case .home:
-                    HomeView(selectedImageData: $selectedImageData)
+                    HomeView(transactions: transactions)
                 case .stats:
-                    StatsView()
+                    StatsView(transactions: transactions)
                 case .profile:
                     ProfileView()
                 case .settings:
-                    SettingsView()
+                    NavigationStack {
+                        SettingsView()
+                    }
                 }
             }
 
-            // Custom bottom tab bar
             HStack {
                 tabBarIcon(systemName: "house.fill", label: "Home", tab: .home)
                 Spacer()
                 tabBarIcon(systemName: "chart.pie.fill", label: "Stats", tab: .stats)
                 Spacer()
 
+                // Now opens the quick-add form instead of the camera
                 Button {
-                    showingActionSheet = true
+                    showingAddTransaction = true
                 } label: {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 22))
+                    Image(systemName: "plus")
+                        .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 56, height: 56)
                         .background(Color.black)
@@ -63,29 +56,13 @@ struct ContentView: View {
             .padding(.bottom, 28)
             .background(.ultraThinMaterial)
         }
-        .confirmationDialog("Add a receipt", isPresented: $showingActionSheet, titleVisibility: .visible) {
-            Button("Take Photo") {
-                showingCamera = true
-            }
-            Button("Choose from Library") {
-                showingPhotoPicker = true
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .fullScreenCover(isPresented: $showingCamera) {
-            CameraPicker(imageData: $selectedImageData)
-        }
-        .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedItem, matching: .images)
-        .onChange(of: selectedItem) {
-            Task {
-                if let data = try? await selectedItem?.loadTransferable(type: Data.self) {
-                    selectedImageData = data
-                }
+        .sheet(isPresented: $showingAddTransaction) {
+            AddTransactionView { newTransaction in
+                transactions.append(newTransaction)
             }
         }
     }
 
-    // Now takes a `tab` parameter so tapping it can switch pages
     @ViewBuilder
     func tabBarIcon(systemName: String, label: String, tab: Tab) -> some View {
         Button {
