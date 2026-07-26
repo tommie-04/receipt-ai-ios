@@ -5,33 +5,73 @@ struct DailyAmount: Identifiable {
     let id = UUID()
     let day: String
     let amount: Double
-    let type: String  // "Income" or "Expense"
+    let type: String
+}
+
+enum ChartRange: String, CaseIterable {
+    case week = "Week"
+    case month = "Month"
 }
 
 struct HomeView: View {
     let transactions: [Transaction]
+    @Binding var chartRange: ChartRange
+    @Binding var referenceDate: Date
+
+    @AppStorage("weekStartDay") private var weekStartDay: Int = 2
+
+    func customWeekInterval(for date: Date) -> DateInterval {
+        var calendar = Calendar.current
+        calendar.firstWeekday = weekStartDay
+
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: date) else {
+            return DateInterval(start: date, duration: 7 * 86400)
+        }
+        return interval
+    }
+
+    // Transactions that fall within the currently selected time range
+    var filteredTransactions: [Transaction] {
+        switch chartRange {
+        case .week:
+            let weekInterval = customWeekInterval(for: referenceDate)
+            return transactions.filter { weekInterval.contains($0.date) }
+        case .month:
+            let calendar = Calendar.current
+            guard let monthInterval = calendar.dateInterval(of: .month, for: referenceDate) else { return [] }
+            return transactions.filter { monthInterval.contains($0.date) }
+        }
+    }
 
     var totalExpense: Double {
-        transactions.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        filteredTransactions.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
     }
 
     var totalIncome: Double {
-        transactions.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        filteredTransactions.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
     }
 
     var netBalance: Double {
         totalIncome - totalExpense
     }
 
+    var weekdayOrder: [String] {
+        let allDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let startIndex = weekStartDay - 1
+        return Array(allDays[startIndex...] + allDays[..<startIndex])
+    }
+
     var weeklyChartData: [DailyAmount] {
         let formatter = DateFormatter()
         formatter.dateFormat = "E"
-        let order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        let order = weekdayOrder
 
         var expenseTotals: [String: Double] = [:]
         var incomeTotals: [String: Double] = [:]
 
-        for transaction in transactions {
+        let weekInterval = customWeekInterval(for: referenceDate)
+
+        for transaction in transactions where weekInterval.contains(transaction.date) {
             let day = formatter.string(from: transaction.date)
             if transaction.type == .expense {
                 expenseTotals[day, default: 0] += transaction.amount
@@ -48,38 +88,176 @@ struct HomeView: View {
         return result
     }
 
+    var monthlyChartData: [DailyAmount] {
+        let calendar = Calendar.current
+        guard let monthInterval = calendar.dateInterval(of: .month, for: referenceDate),
+              let dayRange = calendar.range(of: .day, in: .month, for: referenceDate) else { return [] }
+
+        var expenseTotals: [Int: Double] = [:]
+        var incomeTotals: [Int: Double] = [:]
+
+        for transaction in transactions where monthInterval.contains(transaction.date) {
+            let day = calendar.component(.day, from: transaction.date)
+            if transaction.type == .expense {
+                expenseTotals[day, default: 0] += transaction.amount
+            } else {
+                incomeTotals[day, default: 0] += transaction.amount
+            }
+        }
+
+        var result: [DailyAmount] = []
+        for day in dayRange {
+            result.append(DailyAmount(day: "\(day)", amount: expenseTotals[day] ?? 0, type: "Expense"))
+            result.append(DailyAmount(day: "\(day)", amount: incomeTotals[day] ?? 0, type: "Income"))
+        }
+        return result
+    }
+
+    var currentChartData: [DailyAmount] {
+        chartRange == .week ? weeklyChartData : monthlyChartData
+    }
+
+    var currentRangeLabel: String {
+        let formatter = DateFormatter()
+
+        switch chartRange {
+        case .week:
+            let weekInterval = customWeekInterval(for: referenceDate)
+            formatter.dateFormat = "MMM d"
+            let start = formatter.string(from: weekInterval.start)
+            let end = formatter.string(from: weekInterval.end.addingTimeInterval(-86400))
+            return "\(start) - \(end)"
+        case .month:
+            formatter.dateFormat = "MMMM yyyy"
+            return formatter.string(from: referenceDate)
+        }
+    }
+
+    func moveRange(by value: Int) {
+        let calendar = Calendar.current
+        switch chartRange {
+        case .week:
+            if let newDate = calendar.date(byAdding: .weekOfYear, value: value, to: referenceDate) {
+                referenceDate = newDate
+            }
+        case .month:
+            if let newDate = calendar.date(byAdding: .month, value: value, to: referenceDate) {
+                referenceDate = newDate
+            }
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
 
+                VStack(spacing: 8) {
+                    Image(systemName: "dollarsign.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Color.black)
+                        .clipShape(Circle())
+
+                    Text("Receipt AI")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Net Balance")
+                    Text("Net Balance · \(chartRange.rawValue)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text("$\(netBalance, specifier: "%.2f")")
                         .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(netBalance >= 0 ? Color.primary : Color.red)
                 }
-                .padding(.top, 12)
 
                 HStack(spacing: 12) {
                     summaryCard(title: "Income", amount: totalIncome, color: .green, icon: "arrow.up.circle.fill")
                     summaryCard(title: "Expense", amount: totalExpense, color: .red, icon: "arrow.down.circle.fill")
                 }
 
-                Chart(weeklyChartData) { item in
-                    BarMark(
-                        x: .value("Day", item.day),
-                        y: .value("Amount", item.amount)
-                    )
-                    .foregroundStyle(by: .value("Type", item.type))
-                    .position(by: .value("Type", item.type))
-                    .cornerRadius(4)
+                Picker("Range", selection: $chartRange) {
+                    ForEach(ChartRange.allCases, id: \.self) { range in
+                        Text(range.rawValue).tag(range)
+                    }
                 }
-                .chartForegroundStyleScale([
-                    "Expense": Color.black,
-                    "Income": Color.green
-                ])
+                .pickerStyle(.segmented)
+                .onChange(of: chartRange) {
+                    referenceDate = Date()
+                }
+
+                HStack {
+                    Button {
+                        moveRange(by: -1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text(currentRangeLabel)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+
+                    Spacer()
+
+                    Button {
+                        moveRange(by: 1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 8)
+
+                Group {
+                    if chartRange == .week {
+                        Chart(currentChartData) { item in
+                            BarMark(
+                                x: .value("Day", item.day),
+                                y: .value("Amount", item.amount)
+                            )
+                            .foregroundStyle(by: .value("Type", item.type))
+                            .position(by: .value("Type", item.type))
+                            .cornerRadius(4)
+                        }
+                        .chartForegroundStyleScale([
+                            "Expense": Color.black,
+                            "Income": Color.green
+                        ])
+                    } else {
+                        Chart(currentChartData) { item in
+                            LineMark(
+                                x: .value("Day", item.day),
+                                y: .value("Amount", item.amount)
+                            )
+                            .foregroundStyle(by: .value("Type", item.type))
+                            .interpolationMethod(.catmullRom)
+                            .symbol(by: .value("Type", item.type))
+
+                            AreaMark(
+                                x: .value("Day", item.day),
+                                y: .value("Amount", item.amount)
+                            )
+                            .foregroundStyle(by: .value("Type", item.type))
+                            .opacity(0.1)
+                        }
+                        .chartForegroundStyleScale([
+                            "Expense": Color.black,
+                            "Income": Color.green
+                        ])
+                        .chartXAxis {
+                            AxisMarks(values: .stride(by: 5))
+                        }
+                    }
+                }
                 .chartLegend(position: .top, alignment: .leading)
                 .frame(height: 180)
                 .padding()
@@ -180,5 +358,5 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView(transactions: [])
+    HomeView(transactions: [], chartRange: .constant(.week), referenceDate: .constant(Date()))
 }

@@ -3,6 +3,10 @@ import Charts
 
 struct StatsView: View {
     let transactions: [Transaction]
+    @Binding var chartRange: ChartRange
+    @Binding var referenceDate: Date
+
+    @AppStorage("weekStartDay") private var weekStartDay: Int = 2
 
     let categoryColors: [String: Color] = [
         "Food": .orange,
@@ -13,9 +17,32 @@ struct StatsView: View {
         "Other": .gray
     ]
 
+    func customWeekInterval(for date: Date) -> DateInterval {
+        var calendar = Calendar.current
+        calendar.firstWeekday = weekStartDay
+
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: date) else {
+            return DateInterval(start: date, duration: 7 * 86400)
+        }
+        return interval
+    }
+
+    var filteredTransactions: [Transaction] {
+        let calendar = Calendar.current
+
+        switch chartRange {
+        case .week:
+            let weekInterval = customWeekInterval(for: referenceDate)
+            return transactions.filter { weekInterval.contains($0.date) }
+        case .month:
+            guard let monthInterval = calendar.dateInterval(of: .month, for: referenceDate) else { return [] }
+            return transactions.filter { monthInterval.contains($0.date) }
+        }
+    }
+
     var categoryBreakdown: [(category: String, total: Double)] {
         var totals: [String: Double] = [:]
-        for transaction in transactions where transaction.type == .expense {
+        for transaction in filteredTransactions where transaction.type == .expense {
             totals[transaction.category, default: 0] += transaction.amount
         }
         return totals
@@ -24,23 +51,29 @@ struct StatsView: View {
     }
 
     var totalSpending: Double {
-        transactions.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        filteredTransactions.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
     }
 
     var totalIncome: Double {
-        transactions.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        filteredTransactions.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
 
-                Text("Spending Breakdown")
+                Text("Insights")
                     .font(.largeTitle)
                     .fontWeight(.bold)
                     .padding(.top, 12)
 
-                // Income vs Expense summary
+                Picker("Range", selection: $chartRange) {
+                    ForEach(ChartRange.allCases, id: \.self) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Income")
@@ -151,5 +184,5 @@ struct StatsView: View {
 }
 
 #Preview {
-    StatsView(transactions: [])
+    StatsView(transactions: [], chartRange: .constant(.week), referenceDate: .constant(Date()))
 }

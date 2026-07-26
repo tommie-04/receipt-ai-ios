@@ -1,9 +1,14 @@
 import SwiftUI
+import PhotosUI
 
 struct ContentView: View {
     @State private var selectedTab: Tab = .home
     @State private var showingAddTransaction = false
     @State private var transactions: [Transaction] = []
+
+    // Shared time range state — now lives here instead of inside HomeView/StatsView
+    @State private var chartRange: ChartRange = .week
+    @State private var referenceDate: Date = Date()
 
     enum Tab {
         case home, stats, profile, settings
@@ -14,9 +19,9 @@ struct ContentView: View {
             Group {
                 switch selectedTab {
                 case .home:
-                    HomeView(transactions: transactions)
+                    HomeView(transactions: transactions, chartRange: $chartRange, referenceDate: $referenceDate)
                 case .stats:
-                    StatsView(transactions: transactions)
+                    StatsView(transactions: transactions, chartRange: $chartRange, referenceDate: $referenceDate)
                 case .profile:
                     ProfileView()
                 case .settings:
@@ -32,7 +37,6 @@ struct ContentView: View {
                 tabBarIcon(systemName: "chart.pie.fill", label: "Stats", tab: .stats)
                 Spacer()
 
-                // Now opens the quick-add form instead of the camera
                 Button {
                     showingAddTransaction = true
                 } label: {

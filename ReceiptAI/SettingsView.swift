@@ -3,8 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("accentColorName") private var accentColorName: String = "black"
     @AppStorage("apiKey") private var apiKey: String = ""
-
-    @State private var showingAPIKeyField = false
+    @AppStorage("weekStartDay") private var weekStartDay: Int = 2 // 1 = Sunday, 2 = Monday
 
     let colorOptions: [(name: String, color: Color)] = [
         ("black", .black),
@@ -12,6 +11,16 @@ struct SettingsView: View {
         ("green", .green),
         ("purple", .purple),
         ("orange", .orange)
+    ]
+
+    let weekdayOptions: [(name: String, value: Int)] = [
+        ("Sunday", 1),
+        ("Monday", 2),
+        ("Tuesday", 3),
+        ("Wednesday", 4),
+        ("Thursday", 5),
+        ("Friday", 6),
+        ("Saturday", 7)
     ]
 
     var body: some View {
@@ -23,7 +32,6 @@ struct SettingsView: View {
                     .fontWeight(.bold)
                     .padding(.top, 12)
 
-                // Appearance section
                 settingsSection(title: "Appearance") {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Accent Color")
@@ -53,7 +61,23 @@ struct SettingsView: View {
                     .padding()
                 }
 
-                // Categories section
+                // New: Preferences section for week start day
+                settingsSection(title: "Preferences") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Week Starts On")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Picker("Week Start", selection: $weekStartDay) {
+                            ForEach(weekdayOptions, id: \.value) { option in
+                                Text(option.name).tag(option.value)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                    .padding()
+                }
+
                 settingsSection(title: "Transactions") {
                     NavigationLink {
                         ManageCategoriesView()
@@ -68,7 +92,6 @@ struct SettingsView: View {
                     }
                 }
 
-                // AI / API section
                 settingsSection(title: "AI Analysis") {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
@@ -90,7 +113,6 @@ struct SettingsView: View {
                     .padding()
                 }
 
-                // Account section
                 settingsSection(title: "Account") {
                     settingsRow(icon: "rectangle.portrait.and.arrow.right", title: "Log Out", subtitle: nil)
                 }
@@ -143,7 +165,6 @@ struct SettingsView: View {
     }
 }
 
-// Placeholder page — full functionality to be built later
 struct ManageCategoriesView: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -160,7 +181,6 @@ struct ManageCategoriesView: View {
     }
 }
 
-// Placeholder page — full functionality to be built later
 struct ChartPreferencesView: View {
     var body: some View {
         VStack(spacing: 12) {
